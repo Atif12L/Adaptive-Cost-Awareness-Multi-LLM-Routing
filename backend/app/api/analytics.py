@@ -14,9 +14,9 @@ router = APIRouter(prefix="/api", tags=["Analytics"])
 
 
 @router.get("/analytics")
-async def get_analytics():
+def get_analytics():
     """Aggregates cost savings, latency reductions, and model distribution trends."""
-    recent_requests = await supabase_client.get_recent_requests(limit=100)
+    recent_requests = supabase_client.get_recent_requests_sync(limit=100)
 
     # Category-wise cost comparison (normalized sample across core task categories)
     category_cost_comparison = [

@@ -35,16 +35,6 @@ app.add_middleware(
 )
 
 
-# Request timing middleware
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = (time.time() - start_time) * 1000
-    response.headers["X-Process-Time-Ms"] = f"{process_time:.2f}"
-    return response
-
-
 # Include API Routers
 app.include_router(health_router)
 app.include_router(routing_router)

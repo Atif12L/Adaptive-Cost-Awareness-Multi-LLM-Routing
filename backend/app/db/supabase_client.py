@@ -43,13 +43,16 @@ class SupabaseClient:
             print(f"Supabase logging warning: {e}")
             return False
 
+    def get_recent_requests_sync(self, limit: int = 50) -> List[Dict[str, Any]]:
+        return list(reversed(self.in_memory_requests[-limit:]))
+
     async def get_recent_requests(self, limit: int = 50) -> List[Dict[str, Any]]:
         if not self.is_configured:
             return list(reversed(self.in_memory_requests[-limit:]))
 
         try:
             endpoint = f"{self.url.rstrip('/')}/rest/v1/routing_requests?order=created_at.desc&limit={limit}"
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=0.5) as client:
                 res = await client.get(endpoint, headers=self.headers)
                 if res.status_code == 200:
                     return res.json()

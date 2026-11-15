@@ -3,11 +3,9 @@ Unit and Integration Tests for Router and Simulation Engine
 """
 
 import pytest
-import asyncio
 import os
 import sys
 
-# Ensure backend directory is in python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.db.schemas import RoutingRequest
@@ -16,36 +14,33 @@ from app.core.simulation import calculate_simulation_metrics, PROVIDER_PRICING
 
 
 def test_router_engine_execution():
-    async def _test():
-        req = RoutingRequest(
-            query="Write an asynchronous web scraper in Python to extract product prices and store them in PostgreSQL.",
-            category="Code Generation",
-            domain="Programming",
-            complexity="Hard",
-            reasoning_level="High",
-            requires_code=True,
-            requires_math=False,
-            requires_reasoning=True,
-            quality_priority="High",
-            budget_priority="Low",
-            latency_priority="Low",
-            routing_mode="simulation",
-        )
+    req = RoutingRequest(
+        query="Write an asynchronous web scraper in Python to extract product prices and store them in PostgreSQL.",
+        category="Code Generation",
+        domain="Programming",
+        complexity="Hard",
+        reasoning_level="High",
+        requires_code=True,
+        requires_math=False,
+        requires_reasoning=True,
+        quality_priority="High",
+        budget_priority="Low",
+        latency_priority="Low",
+        routing_mode="simulation",
+    )
 
-        res = await router_engine.route_query(req)
+    res = router_engine.route_query_sync(req)
 
-        assert res is not None
-        assert res.selected_model in [m["model_id"] for m in PROVIDER_PRICING.values()]
-        assert res.model_family in ["GPT", "Claude", "Gemini", "Llama", "DeepSeek"]
-        assert 0.0 <= res.confidence <= 1.0
-        assert len(res.probabilities) == 5
-        assert res.estimated_cost > 0
-        assert res.baseline_cost > 0
-        assert res.estimated_latency_ms > 0
-        assert len(res.explanation) > 10
-        assert len(res.reasons) >= 1
-
-    asyncio.run(_test())
+    assert res is not None
+    assert res.selected_model in [m["model_id"] for m in PROVIDER_PRICING.values()]
+    assert res.model_family in ["GPT", "Claude", "Gemini", "Llama", "DeepSeek"]
+    assert 0.0 <= res.confidence <= 1.0
+    assert len(res.probabilities) == 5
+    assert res.estimated_cost > 0
+    assert res.baseline_cost > 0
+    assert res.estimated_latency_ms > 0
+    assert len(res.explanation) > 10
+    assert len(res.reasons) >= 1
 
 
 def test_simulation_metrics():
@@ -63,20 +58,18 @@ def test_simulation_metrics():
 
 
 def test_budget_priority_shifts_to_economy_model():
-    async def _test():
-        req = RoutingRequest(
-            query="Quickly check if the string format is valid JSON.",
-            category="Code Review",
-            domain="Programming",
-            complexity="Easy",
-            budget_priority="High",
-            latency_priority="High",
-            quality_priority="Low",
-        )
+    req = RoutingRequest(
+        query="Quickly check if the string format is valid JSON.",
+        category="Code Review",
+        domain="Programming",
+        complexity="Easy",
+        budget_priority="High",
+        latency_priority="High",
+        quality_priority="Low",
+        routing_mode="simulation",
+    )
 
-        res = await router_engine.route_query(req)
-        assert res is not None
-        assert res.model_family in ["GPT", "Claude", "Gemini", "Llama", "DeepSeek"]
-        assert res.cost_savings_percent >= 0.0
-
-    asyncio.run(_test())
+    res = router_engine.route_query_sync(req)
+    assert res is not None
+    assert res.model_family in ["GPT", "Claude", "Gemini", "Llama", "DeepSeek"]
+    assert res.cost_savings_percent >= 0.0
