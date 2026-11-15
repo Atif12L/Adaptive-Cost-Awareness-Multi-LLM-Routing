@@ -1,0 +1,218 @@
+[
+  {
+    "feature": "requires_creativity",
+    "importance": 0.1662527471780777
+  },
+  {
+    "feature": "requires_code",
+    "importance": 0.07913952320814133
+  },
+  {
+    "feature": "domain_Translation",
+    "importance": 0.05851716548204422
+  },
+  {
+    "feature": "domain_Education",
+    "importance": 0.045516204088926315
+  },
+  {
+    "feature": "domain_General Question Answering",
+    "importance": 0.045429401099681854
+  },
+  {
+    "feature": "category_Translation Task",
+    "importance": 0.04336835816502571
+  },
+  {
+    "feature": "requires_math",
+    "importance": 0.042753156274557114
+  },
+  {
+    "feature": "domain_Summarization",
+    "importance": 0.041994526982307434
+  },
+  {
+    "feature": "domain_Marketing",
+    "importance": 0.03315485641360283
+  },
+  {
+    "feature": "category_Summarization Task",
+    "importance": 0.022586923092603683
+  },
+  {
+    "feature": "domain_Data Science",
+    "importance": 0.022374117746949196
+  },
+  {
+    "feature": "category_Content Creation",
+    "importance": 0.021412696689367294
+  },
+  {
+    "feature": "category_Debugging",
+    "importance": 0.02053159289062023
+  },
+  {
+    "feature": "domain_Writing",
+    "importance": 0.01836724765598774
+  },
+  {
+    "feature": "category_Optimization Task",
+    "importance": 0.01678827404975891
+  },
+  {
+    "feature": "multilingual",
+    "importance": 0.015668310225009918
+  },
+  {
+    "feature": "requires_reasoning",
+    "importance": 0.014601482078433037
+  },
+  {
+    "feature": "domain_Finance",
+    "importance": 0.014485015533864498
+  },
+  {
+    "feature": "domain_Networking",
+    "importance": 0.013901672326028347
+  },
+  {
+    "feature": "category_Documentation",
+    "importance": 0.013877298682928085
+  },
+  {
+    "feature": "domain_Cyber Security",
+    "importance": 0.013859116472303867
+  },
+  {
+    "feature": "domain_Software Engineering",
+    "importance": 0.013525599613785744
+  },
+  {
+    "feature": "domain_Chemistry",
+    "importance": 0.01278948225080967
+  },
+  {
+    "feature": "domain_Economics",
+    "importance": 0.01261522900313139
+  },
+  {
+    "feature": "domain_Physics",
+    "importance": 0.012601532973349094
+  },
+  {
+    "feature": "domain_Mathematics",
+    "importance": 0.01228529866784811
+  },
+  {
+    "feature": "domain_Legal",
+    "importance": 0.011713455431163311
+  },
+  {
+    "feature": "domain_Machine Learning",
+    "importance": 0.011537698097527027
+  },
+  {
+    "feature": "domain_Biology",
+    "importance": 0.011389835737645626
+  },
+  {
+    "feature": "domain_Cloud Computing",
+    "importance": 0.011173217557370663
+  },
+  {
+    "feature": "domain_Programming",
+    "importance": 0.011064262129366398
+  },
+  {
+    "feature": "category_Conceptual Question",
+    "importance": 0.009931360371410847
+  },
+  {
+    "feature": "domain_Medical",
+    "importance": 0.009539765305817127
+  },
+  {
+    "feature": "category_Research Assistance",
+    "importance": 0.00941710639744997
+  },
+  {
+    "feature": "domain_Research",
+    "importance": 0.009011361747980118
+  },
+  {
+    "feature": "domain_Business",
+    "importance": 0.007983803749084473
+  },
+  {
+    "feature": "domain_DevOps",
+    "importance": 0.007275757379829884
+  },
+  {
+    "feature": "category_Comparative Analysis",
+    "importance": 0.0066495961509644985
+  },
+  {
+    "feature": "complexity_ord",
+    "importance": 0.00645055016502738
+  },
+  {
+    "feature": "category_Explanation",
+    "importance": 0.006150699220597744
+  },
+  {
+    "feature": "domain_Creative Writing",
+    "importance": 0.005642672535032034
+  },
+  {
+    "feature": "reasoning_level_ord",
+    "importance": 0.004058819264173508
+  },
+  {
+    "feature": "category_Data Analysis",
+    "importance": 0.003528145607560873
+  },
+  {
+    "feature": "category_Problem Solving",
+    "importance": 0.003240238642320037
+  },
+  {
+    "feature": "context_length",
+    "importance": 0.0028450472746044397
+  },
+  {
+    "feature": "token_count",
+    "importance": 0.0027934988029301167
+  },
+  {
+    "feature": "category_How-To Tutorial",
+    "importance": 0.002781746443361044
+  },
+  {
+    "feature": "char_length",
+    "importance": 0.0026373949367552996
+  },
+  {
+    "feature": "category_Code Generation",
+    "importance": 0.002602760447189212
+  },
+  {
+    "feature": "urgency_ord",
+    "importance": 0.0025188508443534374
+  },
+  {
+    "feature": "quality_priority_ord",
+    "importance": 0.002496454631909728
+  },
+  {
+    "feature": "latency_priority_ord",
+    "importance": 0.002448032610118389
+  },
+  {
+    "feature": "budget_priority_ord",
+    "importance": 0.002442820928990841
+  },
+  {
+    "feature": "category_Code Review",
+    "importance": 0.0022781691513955593
+  }
+]
