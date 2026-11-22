@@ -20,6 +20,7 @@ import joblib
 from ..db.schemas import RoutingRequest, RoutingResponse, ModelConfidence
 from ..providers.factory import provider_factory
 from .simulation import calculate_simulation_metrics, PROVIDER_PRICING
+from .prompt_analyzer import prompt_analyzer
 
 ARTIFACTS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml_pipeline", "artifacts")
@@ -129,8 +130,15 @@ class RouterEngine:
         confidence: float,
         req: RoutingRequest,
         sim_metrics: Dict[str, Any],
+        detected_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, List[str]]:
         reasons = []
+
+        if detected_info and detected_info.get("source") == "automatic_detection":
+            signals_summary = "; ".join(detected_info.get("signals", [])[:2])
+            reasons.append(f"Auto-detected {req.complexity} complexity ({req.reasoning_level} reasoning): {signals_summary}.")
+        elif detected_info and detected_info.get("source") == "manual_override":
+            reasons.append(f"Manual user override applied: Complexity '{req.complexity}', Reasoning Level '{req.reasoning_level}'.")
 
         if req.requires_code and family == "Claude":
             reasons.append("Query specifies code generation/debugging where Claude demonstrated highest benchmark accuracy.")
@@ -196,9 +204,64 @@ class RouterEngine:
         """Synchronous core routing pipeline for instant simulation execution."""
         query_id = f"qr_{uuid.uuid4().hex[:10]}"
 
+        # 1. Determine whether to auto-detect complexity and reasoning depth
+        # Default behavior: auto-detection is enabled unless explicitly disabled (auto_detect=False)
+        # or when both complexity and reasoning_level are provided by a legacy client without auto_detect flag.
+        is_auto = request.auto_detect is True or (
+            request.auto_detect is None and (
+                request.complexity in [None, "auto", "Auto", ""] or
+                request.reasoning_level in [None, "auto", "Auto", ""]
+            )
+        )
+
+        if is_auto:
+            analysis = prompt_analyzer.analyze(request.query)
+            effective_complexity = analysis["complexity"]
+            effective_reasoning = analysis["reasoning_level"]
+            effective_requires_code = request.requires_code if request.requires_code is not None else analysis["requires_code"]
+            effective_requires_math = request.requires_math if request.requires_math is not None else analysis["requires_math"]
+            effective_requires_reasoning = request.requires_reasoning if request.requires_reasoning is not None else analysis["requires_reasoning"]
+            detected_info = {
+                "complexity": effective_complexity,
+                "reasoning_level": effective_reasoning,
+                "source": "automatic_detection",
+                "confidence": analysis["confidence"],
+                "signals": analysis["signals"],
+                "requires_code": analysis["requires_code"],
+                "requires_math": analysis["requires_math"],
+                "requires_reasoning": analysis["requires_reasoning"],
+                "token_estimate": analysis["token_estimate"],
+            }
+        else:
+            effective_complexity = str(request.complexity or "Medium").capitalize()
+            effective_reasoning = str(request.reasoning_level or "Medium").capitalize()
+            effective_requires_code = bool(request.requires_code)
+            effective_requires_math = bool(request.requires_math)
+            effective_requires_reasoning = bool(request.requires_reasoning)
+            detected_info = {
+                "complexity": effective_complexity,
+                "reasoning_level": effective_reasoning,
+                "source": "manual_override",
+                "confidence": 1.0,
+                "signals": [f"User manually specified complexity='{effective_complexity}', reasoning_level='{effective_reasoning}'"],
+                "requires_code": effective_requires_code,
+                "requires_math": effective_requires_math,
+                "requires_reasoning": effective_requires_reasoning,
+                "token_estimate": max(10, int(len(request.query.split()) * 1.33)),
+            }
+
+        # Create resolved request with effective attributes for feature vector construction
+        resolved_req = request.model_copy(update={
+            "complexity": effective_complexity,
+            "reasoning_level": effective_reasoning,
+            "requires_code": effective_requires_code,
+            "requires_math": effective_requires_math,
+            "requires_reasoning": effective_requires_reasoning,
+        })
+
         if self.is_ml_loaded and self.model and self.config:
             try:
-                X_single = self.transform_request(request)
+                X_single = self.transform_request(resolved_req)
                 proba = self.model.predict_proba(X_single)[0]
                 classes = self.config.get("target_classes", ["Claude", "DeepSeek", "GPT", "Gemini", "Llama"])
 
@@ -212,43 +275,45 @@ class RouterEngine:
                 confidence = probs_list[0].probability
             except Exception as e:
                 print(f"ML prediction error: {e}, using heuristic fallback.")
-                selected_family, confidence, probs_list = self._fallback_heuristic_route(request)
+                selected_family, confidence, probs_list = self._fallback_heuristic_route(resolved_req)
         else:
-            selected_family, confidence, probs_list = self._fallback_heuristic_route(request)
+            selected_family, confidence, probs_list = self._fallback_heuristic_route(resolved_req)
 
         sim_metrics = calculate_simulation_metrics(
             routed_family=selected_family,
-            query_text=request.query,
+            query_text=resolved_req.query,
         )
 
         explanation, reasons = self._generate_explanation(
             family=selected_family,
             confidence=confidence,
-            req=request,
+            req=resolved_req,
             sim_metrics=sim_metrics,
+            detected_info=detected_info,
         )
 
         feature_contributions = {
-            "category": request.category,
-            "domain": request.domain,
-            "complexity": request.complexity,
-            "reasoning_level": request.reasoning_level,
+            "category": resolved_req.category,
+            "domain": resolved_req.domain,
+            "complexity": effective_complexity,
+            "reasoning_level": effective_reasoning,
+            "detection_source": detected_info["source"],
             "priorities": {
-                "quality": request.quality_priority,
-                "budget": request.budget_priority,
-                "latency": request.latency_priority,
+                "quality": resolved_req.quality_priority,
+                "budget": resolved_req.budget_priority,
+                "latency": resolved_req.latency_priority,
             },
             "requirements": {
-                "code": request.requires_code,
-                "math": request.requires_math,
-                "reasoning": request.requires_reasoning,
-                "creativity": request.requires_creativity,
-                "multilingual": request.multilingual,
+                "code": resolved_req.requires_code,
+                "math": resolved_req.requires_math,
+                "reasoning": resolved_req.requires_reasoning,
+                "creativity": resolved_req.requires_creativity,
+                "multilingual": resolved_req.multilingual,
             },
         }
 
         provider = provider_factory.get_provider(selected_family)
-        sim_res = provider.simulate_response(request.query, sim_metrics["input_tokens"])
+        sim_res = provider.simulate_response(resolved_req.query, sim_metrics["input_tokens"])
 
         return RoutingResponse(
             query_id=query_id,
@@ -257,7 +322,7 @@ class RouterEngine:
             display_name=sim_metrics["routed_display_name"],
             confidence=confidence,
             probabilities=probs_list,
-            routing_mode=request.routing_mode or "simulation",
+            routing_mode=resolved_req.routing_mode or "simulation",
             explanation=explanation,
             reasons=reasons,
             estimated_cost=sim_metrics["estimated_cost_usd"],
@@ -267,6 +332,7 @@ class RouterEngine:
             cost_savings_percent=sim_metrics["cost_savings_percent"],
             latency_savings_percent=sim_metrics["latency_savings_percent"],
             feature_contributions=feature_contributions,
+            detected_features=detected_info,
             response_text=sim_res.response_text,
             is_live_call=False,
             warning=None,

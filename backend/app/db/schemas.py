@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class RoutingRequest(BaseModel):
     query: str = Field(..., description="The user prompt or query text to route")
+    auto_detect: Optional[bool] = Field(None, description="Whether to automatically infer complexity and reasoning level from query")
     category: Optional[str] = Field("Conceptual Question", description="Task category")
     domain: Optional[str] = Field("General", description="Subject domain")
     complexity: Optional[str] = Field("Medium", description="Complexity level: Easy, Medium, Hard, Expert")
@@ -46,6 +47,7 @@ class RoutingResponse(BaseModel):
     cost_savings_percent: float
     latency_savings_percent: float
     feature_contributions: Dict[str, Any]
+    detected_features: Optional[Dict[str, Any]] = None
     response_text: Optional[str] = None
     is_live_call: bool = False
     warning: Optional[str] = None

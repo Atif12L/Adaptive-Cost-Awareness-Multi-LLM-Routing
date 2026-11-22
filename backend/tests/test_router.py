@@ -73,3 +73,127 @@ def test_budget_priority_shifts_to_economy_model():
     assert res is not None
     assert res.model_family in ["GPT", "Claude", "Gemini", "Llama", "DeepSeek"]
     assert res.cost_savings_percent >= 0.0
+
+
+def test_auto_detect_simple_factual_prompt():
+    req = RoutingRequest(
+        query="What is the capital of France?",
+        auto_detect=True,
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["source"] == "automatic_detection"
+    assert res.detected_features["complexity"] == "Easy"
+    assert res.detected_features["reasoning_level"] == "Low"
+    assert len(res.detected_features["signals"]) > 0
+
+
+def test_auto_detect_coding_task():
+    req = RoutingRequest(
+        query="Write a Python script to sort a list of dictionaries by key.",
+        auto_detect=True,
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["requires_code"] is True
+    assert res.detected_features["complexity"] in ["Medium", "Hard"]
+
+
+def test_auto_detect_mathematical_problem():
+    req = RoutingRequest(
+        query="Calculate the eigenvalues of a 2x2 matrix [[2, 1], [1, 2]] and prove orthogonality.",
+        auto_detect=True,
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["requires_math"] is True
+    assert res.detected_features["complexity"] in ["Hard", "Expert"]
+    assert res.detected_features["reasoning_level"] in ["High", "Medium"]
+
+
+def test_auto_detect_multistep_reasoning():
+    req = RoutingRequest(
+        query="Analyze the trade-offs between Paxos and Raft consensus algorithms step-by-step for a distributed database under network partitions.",
+        auto_detect=True,
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["requires_reasoning"] is True
+    assert res.detected_features["complexity"] in ["Hard", "Expert"]
+    assert res.detected_features["reasoning_level"] == "High"
+
+
+def test_manual_override_respected():
+    # Prompt is simple factual, but user explicitly overrides to Expert / High
+    req = RoutingRequest(
+        query="What is the capital of France?",
+        auto_detect=False,
+        complexity="Expert",
+        reasoning_level="High",
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["source"] == "manual_override"
+    assert res.detected_features["complexity"] == "Expert"
+    assert res.detected_features["reasoning_level"] == "High"
+    assert res.feature_contributions["complexity"] == "Expert"
+    assert res.feature_contributions["reasoning_level"] == "High"
+
+
+def test_backward_compatibility_legacy_client():
+    # Legacy client without auto_detect field
+    req = RoutingRequest(
+        query="Evaluate the quadratic formula x = (-b +- sqrt(b^2-4ac)) / (2a).",
+        complexity="Medium",
+        reasoning_level="Medium",
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["source"] == "manual_override"
+    assert res.detected_features["complexity"] == "Medium"
+    assert res.detected_features["reasoning_level"] == "Medium"
+
+
+def test_exact_54_feature_schema_alignment():
+    """Strict regression test verifying exact feature names, ordering, and counts
+
+    against the trained model's preprocessor_config.json.
+    """
+    import json
+    from app.core.router_engine import CONFIG_PATH
+
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    categories = config["categories"]
+    domains = config["domains"]
+    expected_features = config["feature_names"]
+
+    # Verify breakdown
+    assert len(categories) == 15, f"Expected 15 categories, got {len(categories)}"
+    assert len(domains) == 25, f"Expected 25 domains, got {len(domains)}"
+    assert len(expected_features) == 54, f"Expected 54 feature names, got {len(expected_features)}"
+
+    # Reconstruct feature names produced by transform_request
+    generated_names = [
+        "token_count", "context_length", "char_length",
+        "complexity_ord", "reasoning_level_ord", "urgency_ord",
+        "budget_priority_ord", "quality_priority_ord", "latency_priority_ord",
+        "requires_code", "requires_math", "requires_reasoning",
+        "requires_creativity", "multilingual",
+    ]
+    for cat in categories:
+        generated_names.append(f"category_{cat}")
+    for dom in domains:
+        generated_names.append(f"domain_{dom}")
+
+    assert generated_names == expected_features, "Feature names or order do not match preprocessor_config.json"
+
+    # Verify vector output shape and type
+    req = RoutingRequest(
+        query="Unit test query for feature schema verification",
+        category="Code Generation",
+        domain="Software Engineering",
+    )
+    vec = router_engine.transform_request(req)
+    assert vec.shape == (1, 54)

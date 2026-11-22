@@ -19,6 +19,7 @@ export interface ModelConfidence {
 
 export interface RoutingRequest {
   query: string;
+  auto_detect?: boolean;
   category?: string;
   domain?: string;
   complexity?: string;
@@ -33,6 +34,18 @@ export interface RoutingRequest {
   requires_creativity?: boolean;
   multilingual?: boolean;
   routing_mode?: "simulation" | "live";
+}
+
+export interface DetectedFeatures {
+  complexity: string;
+  reasoning_level: string;
+  source: "automatic_detection" | "manual_override";
+  confidence: number;
+  signals: string[];
+  requires_code?: boolean;
+  requires_math?: boolean;
+  requires_reasoning?: boolean;
+  token_estimate?: number;
 }
 
 export interface RoutingResponse {
@@ -52,6 +65,7 @@ export interface RoutingResponse {
   cost_savings_percent: number;
   latency_savings_percent: number;
   feature_contributions: Record<string, any>;
+  detected_features?: DetectedFeatures;
   response_text?: string;
   is_live_call?: boolean;
   warning?: string;

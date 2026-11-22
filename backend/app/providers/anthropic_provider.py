@@ -33,7 +33,7 @@ class AnthropicProvider(BaseLLMProvider):
             f"```python\n"
             f"# Modular implementation demonstrating edge-case robustness\n"
             f"def handle_query_workload(workload_data):\n"
-            f"    return {'status': 'processed', 'fidelity': 'high'}\n"
+            "    return {'status': 'processed', 'fidelity': 'high'}\n"
             f"```\n"
             f"Key Architectural Highlights: Emphasizing modular design principles and verified correctness."
         )
