@@ -136,9 +136,9 @@ class RouterEngine:
 
         if detected_info and detected_info.get("source") == "automatic_detection":
             signals_summary = "; ".join(detected_info.get("signals", [])[:2])
-            reasons.append(f"Auto-detected {req.complexity} complexity ({req.reasoning_level} reasoning): {signals_summary}.")
+            reasons.append(f"Auto-detected '{req.category}' in '{req.domain}' ({req.complexity} complexity, {req.reasoning_level} reasoning): {signals_summary}.")
         elif detected_info and detected_info.get("source") == "manual_override":
-            reasons.append(f"Manual user override applied: Complexity '{req.complexity}', Reasoning Level '{req.reasoning_level}'.")
+            reasons.append(f"Manual user override applied: Category '{req.category}', Domain '{req.domain}', Complexity '{req.complexity}', Reasoning '{req.reasoning_level}'.")
 
         if req.requires_code and family == "Claude":
             reasons.append("Query specifies code generation/debugging where Claude demonstrated highest benchmark accuracy.")
@@ -204,24 +204,34 @@ class RouterEngine:
         """Synchronous core routing pipeline for instant simulation execution."""
         query_id = f"qr_{uuid.uuid4().hex[:10]}"
 
-        # 1. Determine whether to auto-detect complexity and reasoning depth
-        # Default behavior: auto-detection is enabled unless explicitly disabled (auto_detect=False)
-        # or when both complexity and reasoning_level are provided by a legacy client without auto_detect flag.
-        is_auto = request.auto_detect is True or (
-            request.auto_detect is None and (
-                request.complexity in [None, "auto", "Auto", ""] or
-                request.reasoning_level in [None, "auto", "Auto", ""]
+        # 1. Determine whether to auto-detect category, domain, complexity, and reasoning depth
+        # Default behavior: auto-detection is enabled when auto_detect=True
+        # When auto_detect is None, auto-detect runs unless explicit manual values were supplied by a legacy client.
+        if request.auto_detect is True:
+            is_auto = True
+        elif request.auto_detect is False:
+            is_auto = False
+        else:
+            has_explicit_manual = (
+                (request.complexity not in [None, "auto", "Auto", ""] and
+                 request.reasoning_level not in [None, "auto", "Auto", ""]) or
+                (request.category not in [None, "auto", "Auto", ""] and request.category != "Conceptual Question") or
+                (request.domain not in [None, "auto", "Auto", ""] and request.domain != "General")
             )
-        )
+            is_auto = not has_explicit_manual
 
         if is_auto:
             analysis = prompt_analyzer.analyze(request.query)
+            effective_category = analysis["category"]
+            effective_domain = analysis["domain"]
             effective_complexity = analysis["complexity"]
             effective_reasoning = analysis["reasoning_level"]
             effective_requires_code = request.requires_code if request.requires_code is not None else analysis["requires_code"]
             effective_requires_math = request.requires_math if request.requires_math is not None else analysis["requires_math"]
             effective_requires_reasoning = request.requires_reasoning if request.requires_reasoning is not None else analysis["requires_reasoning"]
             detected_info = {
+                "category": effective_category,
+                "domain": effective_domain,
                 "complexity": effective_complexity,
                 "reasoning_level": effective_reasoning,
                 "source": "automatic_detection",
@@ -233,17 +243,21 @@ class RouterEngine:
                 "token_estimate": analysis["token_estimate"],
             }
         else:
+            effective_category = str(request.category or "Conceptual Question")
+            effective_domain = str(request.domain or "General")
             effective_complexity = str(request.complexity or "Medium").capitalize()
             effective_reasoning = str(request.reasoning_level or "Medium").capitalize()
             effective_requires_code = bool(request.requires_code)
             effective_requires_math = bool(request.requires_math)
             effective_requires_reasoning = bool(request.requires_reasoning)
             detected_info = {
+                "category": effective_category,
+                "domain": effective_domain,
                 "complexity": effective_complexity,
                 "reasoning_level": effective_reasoning,
                 "source": "manual_override",
                 "confidence": 1.0,
-                "signals": [f"User manually specified complexity='{effective_complexity}', reasoning_level='{effective_reasoning}'"],
+                "signals": [f"User manually specified category='{effective_category}', domain='{effective_domain}', complexity='{effective_complexity}', reasoning_level='{effective_reasoning}'"],
                 "requires_code": effective_requires_code,
                 "requires_math": effective_requires_math,
                 "requires_reasoning": effective_requires_reasoning,
@@ -252,6 +266,8 @@ class RouterEngine:
 
         # Create resolved request with effective attributes for feature vector construction
         resolved_req = request.model_copy(update={
+            "category": effective_category,
+            "domain": effective_domain,
             "complexity": effective_complexity,
             "reasoning_level": effective_reasoning,
             "requires_code": effective_requires_code,

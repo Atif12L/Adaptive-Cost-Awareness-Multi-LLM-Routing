@@ -25,8 +25,8 @@ async def route_query_endpoint(request: RoutingRequest, background_tasks: Backgr
         # Log asynchronously to Supabase
         db_payload = {
             "query_text": request.query[:500],
-            "category": request.category,
-            "domain": request.domain,
+            "category": response.feature_contributions.get("category", request.category),
+            "domain": response.feature_contributions.get("domain", request.domain),
             "complexity": response.feature_contributions.get("complexity", request.complexity),
             "reasoning_level": response.feature_contributions.get("reasoning_level", request.reasoning_level),
             "urgency": request.urgency,

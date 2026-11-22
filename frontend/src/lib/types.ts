@@ -37,6 +37,8 @@ export interface RoutingRequest {
 }
 
 export interface DetectedFeatures {
+  category?: string;
+  domain?: string;
   complexity: string;
   reasoning_level: string;
   source: "automatic_detection" | "manual_override";

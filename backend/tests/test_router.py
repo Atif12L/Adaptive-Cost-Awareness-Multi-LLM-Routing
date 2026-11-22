@@ -83,6 +83,8 @@ def test_auto_detect_simple_factual_prompt():
     res = router_engine.route_query_sync(req)
     assert res.detected_features is not None
     assert res.detected_features["source"] == "automatic_detection"
+    assert res.detected_features["category"] == "Conceptual Question"
+    assert res.detected_features["domain"] == "General Question Answering"
     assert res.detected_features["complexity"] == "Easy"
     assert res.detected_features["reasoning_level"] == "Low"
     assert len(res.detected_features["signals"]) > 0
@@ -96,7 +98,87 @@ def test_auto_detect_coding_task():
     res = router_engine.route_query_sync(req)
     assert res.detected_features is not None
     assert res.detected_features["requires_code"] is True
+    assert res.detected_features["category"] == "Code Generation"
+    assert res.detected_features["domain"] == "Programming"
     assert res.detected_features["complexity"] in ["Medium", "Hard"]
+
+
+def test_auto_detect_code_review():
+    req = RoutingRequest(
+        query="Perform a code review of this pull request to identify code smells and idiomatic improvements.",
+        auto_detect=True,
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["category"] == "Code Review"
+    assert res.detected_features["domain"] in ["Programming", "Software Engineering"]
+    assert res.detected_features["domain"] != "General Question Answering"
+
+
+def test_auto_detect_debugging():
+    req = RoutingRequest(
+        query="Fix this traceback and TypeError: NoneType object is not subscriptable in my script.",
+        auto_detect=True,
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["category"] == "Debugging"
+    assert res.detected_features["domain"] == "Programming"
+
+
+def test_code_related_domain_inference_regression():
+    """Specific regression test covering the four critical domain inferences:
+    - Code Review -> Programming / Software Engineering (never General QA)
+    - Code Generation -> Programming
+    - Debugging -> Programming
+    - General factual question -> General Question Answering
+    """
+    from app.core.prompt_analyzer import prompt_analyzer
+
+    # 1. Code Review
+    out_review = prompt_analyzer.analyze("Perform a code review of this pull request to identify code smells and idiomatic improvements.")
+    assert out_review["category"] == "Code Review"
+    assert out_review["domain"] in ["Programming", "Software Engineering"]
+    assert out_review["domain"] != "General Question Answering"
+
+    # 2. Code Generation
+    out_gen = prompt_analyzer.analyze("Write a Python function to sort a list of dictionaries by key using itemgetter with type hints.")
+    assert out_gen["category"] == "Code Generation"
+    assert out_gen["domain"] == "Programming"
+
+    # 3. Debugging
+    out_debug = prompt_analyzer.analyze("Fix this traceback and TypeError: NoneType object is not subscriptable in my script.")
+    assert out_debug["category"] == "Debugging"
+    assert out_debug["domain"] == "Programming"
+
+    # 4. General factual question
+    out_fact1 = prompt_analyzer.analyze("What is the capital of France?")
+    assert out_fact1["category"] == "Conceptual Question"
+    assert out_fact1["domain"] == "General Question Answering"
+
+    out_fact2 = prompt_analyzer.analyze("Who was the first president of the United States?")
+    assert out_fact2["category"] == "Conceptual Question"
+    assert out_fact2["domain"] == "General Question Answering"
+
+
+def test_auto_detect_translation_and_summarization():
+    # Translation
+    req_trans = RoutingRequest(
+        query="Translate the following English document into Spanish.",
+        auto_detect=True,
+    )
+    res_trans = router_engine.route_query_sync(req_trans)
+    assert res_trans.detected_features["category"] == "Translation Task"
+    assert res_trans.detected_features["domain"] == "Translation"
+
+    # Summarization
+    req_sum = RoutingRequest(
+        query="Summarize the core clinical recommendations from this treatment guideline into 5 bullet points.",
+        auto_detect=True,
+    )
+    res_sum = router_engine.route_query_sync(req_sum)
+    assert res_sum.detected_features["category"] == "Summarization Task"
+    assert res_sum.detected_features["domain"] == "Medical"
 
 
 def test_auto_detect_mathematical_problem():
@@ -107,8 +189,55 @@ def test_auto_detect_mathematical_problem():
     res = router_engine.route_query_sync(req)
     assert res.detected_features is not None
     assert res.detected_features["requires_math"] is True
+    assert res.detected_features["category"] == "Problem Solving"
+    assert res.detected_features["domain"] == "Mathematics"
     assert res.detected_features["complexity"] in ["Hard", "Expert"]
     assert res.detected_features["reasoning_level"] in ["High", "Medium"]
+
+
+def test_auto_detect_medical_and_legal_questions():
+    # Medical without summarization trigger
+    req_med = RoutingRequest(
+        query="What are the clinical symptoms, pathology, and recommended dosage for pediatric asthma therapy?",
+        auto_detect=True,
+    )
+    res_med = router_engine.route_query_sync(req_med)
+    assert res_med.detected_features["domain"] == "Medical"
+    assert res_med.detected_features["category"] != "Summarization Task"
+
+    # Legal question
+    req_leg = RoutingRequest(
+        query="Explain the liability, indemnification, and GDPR compliance clauses in this software license contract.",
+        auto_detect=True,
+    )
+    res_leg = router_engine.route_query_sync(req_leg)
+    assert res_leg.detected_features["domain"] == "Legal"
+    assert res_leg.detected_features["category"] in ["Explanation", "Conceptual Question", "Comparative Analysis"]
+
+
+def test_all_15_categories_and_25_domains_valid():
+    from app.core.prompt_analyzer import prompt_analyzer, PromptAnalyzer
+    test_queries = [
+        "Write a Python function to sort numbers.",
+        "Review this code for code smells.",
+        "Compare MySQL and PostgreSQL performance trade-offs.",
+        "What is the concept of quantum superposition?",
+        "Write an essay about the renaissance era.",
+        "Analyze this pandas dataset and visualize the correlation matrix.",
+        "Debug this NullPointerException in Java.",
+        "Write the API documentation and docstrings for this module.",
+        "Explain how the Paxos consensus algorithm works step-by-step.",
+        "How to setup and configure Docker on Ubuntu step-by-step guide.",
+        "Optimize this algorithm to reduce latency and time complexity.",
+        "Solve for x in the quadratic equation 2x^2 + 5x - 3 = 0.",
+        "Literature review on state of the art transformer architectures.",
+        "Summarize the quarterly earnings report in 3 bullet points.",
+        "Translate this paragraph into German.",
+    ]
+    for q in test_queries:
+        analysis = prompt_analyzer.analyze(q)
+        assert analysis["category"] in PromptAnalyzer.VALID_CATEGORIES, f"Invalid category: {analysis['category']}"
+        assert analysis["domain"] in PromptAnalyzer.VALID_DOMAINS, f"Invalid domain: {analysis['domain']}"
 
 
 def test_auto_detect_multistep_reasoning():
@@ -121,35 +250,61 @@ def test_auto_detect_multistep_reasoning():
     assert res.detected_features["requires_reasoning"] is True
     assert res.detected_features["complexity"] in ["Hard", "Expert"]
     assert res.detected_features["reasoning_level"] == "High"
+    assert res.detected_features["domain"] in ["Software Engineering", "Computer Science", "Cloud Computing", "Networking", "Programming"]
 
 
 def test_manual_override_respected():
-    # Prompt is simple factual, but user explicitly overrides to Expert / High
+    # Prompt is simple factual, but user explicitly overrides all 4 fields
     req = RoutingRequest(
         query="What is the capital of France?",
         auto_detect=False,
+        category="Code Review",
+        domain="Cyber Security",
         complexity="Expert",
         reasoning_level="High",
     )
     res = router_engine.route_query_sync(req)
     assert res.detected_features is not None
     assert res.detected_features["source"] == "manual_override"
+    assert res.detected_features["category"] == "Code Review"
+    assert res.detected_features["domain"] == "Cyber Security"
     assert res.detected_features["complexity"] == "Expert"
     assert res.detected_features["reasoning_level"] == "High"
+    assert res.feature_contributions["category"] == "Code Review"
+    assert res.feature_contributions["domain"] == "Cyber Security"
     assert res.feature_contributions["complexity"] == "Expert"
     assert res.feature_contributions["reasoning_level"] == "High"
+
+
+def test_reset_to_auto_detect():
+    # User had manual values, but then toggled Reset to Auto-Detect (auto_detect=True)
+    req = RoutingRequest(
+        query="Write a Python script to sort a list of numbers.",
+        auto_detect=True,
+        category="Medical", # Old stale manual value
+        domain="Legal",     # Old stale manual value
+    )
+    res = router_engine.route_query_sync(req)
+    assert res.detected_features is not None
+    assert res.detected_features["source"] == "automatic_detection"
+    assert res.detected_features["category"] == "Code Generation"
+    assert res.detected_features["domain"] in ["Programming", "Software Engineering"]
 
 
 def test_backward_compatibility_legacy_client():
     # Legacy client without auto_detect field
     req = RoutingRequest(
         query="Evaluate the quadratic formula x = (-b +- sqrt(b^2-4ac)) / (2a).",
+        category="Problem Solving",
+        domain="Mathematics",
         complexity="Medium",
         reasoning_level="Medium",
     )
     res = router_engine.route_query_sync(req)
     assert res.detected_features is not None
     assert res.detected_features["source"] == "manual_override"
+    assert res.detected_features["category"] == "Problem Solving"
+    assert res.detected_features["domain"] == "Mathematics"
     assert res.detected_features["complexity"] == "Medium"
     assert res.detected_features["reasoning_level"] == "Medium"
 

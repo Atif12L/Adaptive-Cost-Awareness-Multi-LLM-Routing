@@ -6,8 +6,9 @@ of the user prompt string prior to feature-vector assembly and model selection.
 Operates strictly on pre-inference features with zero post-inference or target leakage.
 
 Note: This is an explainable heuristic feature extraction module, not a trained
-classifier. It infers task complexity and reasoning depth based on deterministic
-linguistic, mathematical, and programming syntax patterns calibrated to the dataset taxonomy.
+classifier. It infers task complexity, reasoning depth, task category, and subject
+domain based on deterministic linguistic, mathematical, and programming syntax patterns
+calibrated to the dataset taxonomy.
 """
 
 import re
@@ -15,10 +16,58 @@ from typing import Dict, Any, List
 
 
 class PromptAnalyzer:
-    """Arrival-time heuristic analyzer that extracts query complexity,
+    """Arrival-time heuristic analyzer that extracts query complexity, reasoning depth,
 
-    reasoning depth, and domain requirement flags with zero target leakage.
+    task category, subject domain, and domain requirement flags with zero target leakage.
     """
+
+    # Exactly 15 valid task categories from preprocessor_config.json
+    VALID_CATEGORIES = [
+        "Code Generation",
+        "Code Review",
+        "Comparative Analysis",
+        "Conceptual Question",
+        "Content Creation",
+        "Data Analysis",
+        "Debugging",
+        "Documentation",
+        "Explanation",
+        "How-To Tutorial",
+        "Optimization Task",
+        "Problem Solving",
+        "Research Assistance",
+        "Summarization Task",
+        "Translation Task",
+    ]
+
+    # Exactly 25 valid subject domains from preprocessor_config.json
+    VALID_DOMAINS = [
+        "Biology",
+        "Business",
+        "Chemistry",
+        "Cloud Computing",
+        "Creative Writing",
+        "Cyber Security",
+        "Data Science",
+        "DevOps",
+        "Economics",
+        "Education",
+        "Finance",
+        "General Question Answering",
+        "Legal",
+        "Machine Learning",
+        "Marketing",
+        "Mathematics",
+        "Medical",
+        "Networking",
+        "Physics",
+        "Programming",
+        "Research",
+        "Software Engineering",
+        "Summarization",
+        "Translation",
+        "Writing",
+    ]
 
     # High-difficulty engineering & systems patterns
     EXPERT_HARD_PATTERNS = [
@@ -34,13 +83,14 @@ class PromptAnalyzer:
     # Programming & software engineering syntax markers
     CODE_PATTERNS = [
         r"```",
-        r"\b(?:def|class|interface|struct|impl|func|function)\s+[a-zA-Z_]\w*",
+        r"\b(?:def|class|interface|struct|impl|func)\s+[a-zA-Z_]\w*|\bfunction\s+[a-zA-Z_]\w*\s*\(",
         r"\b(?:import|from\s+[a-zA-Z_]\w*\s+import|require\(|include\s*<)",
         r"\b(?:return|async|await|const|let|var|public\s+static\s+void)\b",
         r"\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b.*\b(?:FROM|WHERE|JOIN|SET)\b",
         r"[{}\[\];]{3,}",
         r"\b(?:unit\s*test|pytest|jest|junit|test\s*case|mocking|tdd|assertion)\b",
         r"\b(?:refactor|debugging|debug|traceback|syntaxerror|nullpointer|segfault|profiling)\b",
+        r"\b(?:code\s*review|pull\s*requests?|\bpr\b|code\s*smells?|idiomatic|codebase)\b",
         r"\b(?:python|javascript|typescript|c\+\+|rust|golang|docker|kubernetes|redis|postgresql)\b",
     ]
 
@@ -75,10 +125,180 @@ class PromptAnalyzer:
     ]
 
     @classmethod
-    def analyze(cls, query: str) -> Dict[str, Any]:
-        """Analyzes query text at arrival time and returns detected complexity,
+    def infer_task_category(cls, text: str, requires_code: bool, requires_math: bool) -> str:
+        """Deterministically infers one of the 15 valid Task Categories using prioritized intent patterns."""
+        # 1. Translation Task
+        if re.search(r"\b(?:translate\s+(?:this|the\s+following)?|translation\s+of|convert\s+(?:this\s+text\s+)?to\s+(?:spanish|french|german|mandarin|chinese|japanese|russian|italian|portuguese|arabic|hindi|english))\b", text, re.IGNORECASE):
+            return "Translation Task"
 
-        reasoning depth, boolean requirement flags, and explainable signals.
+        # 2. Summarization Task
+        if re.search(r"\b(?:summarize|summary\s+of|tldr|condense|synthesize\s+(?:this|the\s+following)?\s+into|executive\s+summary|brief\s+summary|abstract\s+of|key\s+takeaways)\b", text, re.IGNORECASE):
+            return "Summarization Task"
+
+        # 3. Code Review
+        if re.search(r"\b(?:code\s*review|review\s+(?:this|my)?\s*(?:code|implementation|pull\s*request|pr|diff)|critique\s+(?:this|the)?\s*code|audit\s+(?:this\s+)?code|check\s+for\s+code\s*smells|is\s+this\s+code\s+idiomatic|improve\s+code\s+quality)\b", text, re.IGNORECASE):
+            return "Code Review"
+
+        # 4. Debugging
+        if re.search(r"\b(?:debug|fix\s+(?:the\s+)?(?:bug|error|issue|problem|crash|exception|typo|failing)|traceback|syntaxerror|typeerror|referenceerror|nullpointer|segfault|undefined\s+is\s+not|stack\s*overflow|why\s+is\s+(?:this\s+)?(?:code\s+)?failing|troubleshoot)\b", text, re.IGNORECASE):
+            return "Debugging"
+
+        # 5. Optimization Task
+        if re.search(r"\b(?:optimize|performance\s*tuning|reduce\s+latency|speed\s*up|make\s+(?:it|this)\s+faster|profiling|time\s*complexity|space\s*complexity|improve\s+(?:the\s+)?efficiency|reduce\s+(?:memory|cpu))\b", text, re.IGNORECASE):
+            return "Optimization Task"
+
+        # 6. Documentation
+        if re.search(r"\b(?:documentation|docstrings?|write\s+(?:the\s+)?docs|readme(?:\.md)?|api\s*documentation|document\s+(?:this|the)?\s*code|changelog|release\s*notes|comment\s+(?:this|the)?\s*code)\b", text, re.IGNORECASE):
+            return "Documentation"
+
+        # 7. Data Analysis
+        if re.search(r"\b(?:data\s*analysis|analyze\s+(?:the\s+|this\s+)?dataset|pandas\s+dataframe|dataframe|descriptive\s+statistics|aggregations?|correlation\s+matrix|visualize\s+data|scatter\s*plot|histogram|exploratory\s+data\s+analysis|eda)\b", text, re.IGNORECASE):
+            return "Data Analysis"
+
+        # 8. Comparative Analysis
+        if re.search(r"\b(?:compare\s+and\s+contrast|compare\s+[a-zA-Z0-9_\-]+\s+(?:and|with|to)\s+[a-zA-Z0-9_\-]+|\bvs\.?\b|versus|trade-offs?|pros\s+and\s+cons|difference\s+between|which\s+(?:is|one\s+is)\s+better)\b", text, re.IGNORECASE):
+            return "Comparative Analysis"
+
+        # 9. Research Assistance
+        if re.search(r"\b(?:literature\s*review|research\s*papers?|citations?|state\s+of\s+the\s+art|academic\s+(?:sources|literature|synthesis)|recent\s+advances\s+in|survey\s+paper|systematic\s+review)\b", text, re.IGNORECASE):
+            return "Research Assistance"
+
+        # 10. How-To Tutorial
+        if re.search(r"\b(?:how\s+(?:do\s+i|can\s+i|to)|step-by-step\s+(?:guide|tutorial|instructions)|walkthrough|tutorial\s+on|guide\s+(?:on|to)|instructions\s+to\s+(?:install|setup|configure|deploy|build))\b", text, re.IGNORECASE):
+            return "How-To Tutorial"
+
+        # 11. Content Creation
+        if re.search(r"\b(?:write\s+an?\s+(?:essay|blog\s*post|article|email|story|poem|press\s*release|speech|marketing\s*copy|cover\s*letter|script|newsletter)|compose\s+a\s+(?:song|poem|story)|draft\s+an?\s+(?:email|announcement))\b", text, re.IGNORECASE):
+            return "Content Creation"
+
+        # 12. Problem Solving
+        if requires_math or re.search(r"\b(?:solve\s+for|find\s+the\s+(?:maximum|minimum|optimal|value)|algorithm\s+for|puzzle|dynamic\s*programming|shortest\s*path|graph\s*traversal|derive\s+the\s+formula|evaluate\s+the\s+expression|calculate\s+the)\b", text, re.IGNORECASE):
+            return "Problem Solving"
+
+        # 13. Explanation
+        if re.search(r"\b(?:explain\b|walk\s+me\s+through|how\s+does.*work|break\s+down\b|clarify\b)", text, re.IGNORECASE):
+            return "Explanation"
+
+        # 14. Code Generation
+        if re.search(r"\b(?:write|create|implement|build|develop|generate|code)\s+(?:a\s+|an\s+)?(?:python|javascript|typescript|c\+\+|rust|golang|sql|bash|html|css|react)?\s*(?:function|script|class|module|program|endpoint|api|algorithm|component|service|app)\b", text, re.IGNORECASE) or (requires_code and re.search(r"\b(?:write|create|implement|build|develop|generate|code|program)\b", text, re.IGNORECASE)):
+            return "Code Generation"
+
+        # 15. Default: Conceptual Question
+        return "Conceptual Question"
+
+    @classmethod
+    def infer_subject_domain(cls, text: str, category: str, requires_code: bool, requires_math: bool) -> str:
+        """Deterministically infers one of the 25 valid Subject Domains using specialized keyword scoring."""
+        scores: Dict[str, int] = {domain: 0 for domain in cls.VALID_DOMAINS}
+
+        # 1. Specialized domains with high-precision terms
+        domain_patterns = {
+            "Machine Learning": [
+                r"\b(?:machine\s*learning|deep\s*learning|neural\s*networks?|transformers?|llms?|language\s*models?)\b",
+                r"\b(?:loss\s*function|backpropagation|gradient\s*descent|pytorch|tensorflow|fine-tuning|embeddings|attention\s*mechanism|hyperparameters?)\b",
+            ],
+            "Data Science": [
+                r"\b(?:pandas|numpy|scikit-learn|eda|regression|clustering|feature\s*engineering|seaborn|matplotlib|outlier|data\s*cleaning|random\s*forest|data\s*science)\b",
+            ],
+            "DevOps": [
+                r"\b(?:docker|kubernetes|k8s|helm|ci\/cd|pipelines?|terraform|ansible|github\s*actions|gitlab\s*ci|prometheus|grafana|containerization|deployment|deploying)\b",
+            ],
+            "Cloud Computing": [
+                r"\b(?:aws|azure|gcp|serverless|s3|ec2|lambda|vpc|cloud\s*infrastructure|cloudformation|blob\s*storage|cloud\s*computing)\b",
+            ],
+            "Cyber Security": [
+                r"\b(?:vulnerability|vulnerabilities|cve|cryptography|firewall|oauth|jwt|encryption|authentication|auth|penetration\s*testing|pentest|exploit|malware|ransomware|zero-day|owasp|injection|cyber\s*security)\b",
+            ],
+            "Software Engineering": [
+                r"\b(?:microservices|software\s*architecture|design\s*patterns?|distributed(?:\s*(?:systems?|database|storage|computing|ledger))?|consensus|paxos|raft|scalability|system\s*design|fault-tolerant|rate-limiter|high-throughput|concurrency|solid\s*principles|modularity|software\s*engineering)\b",
+                r"\b(?:code\s*review|pull\s*requests?|\bpr\b|code\s*smells?|refactor(?:ing)?|codebase|clean\s*code|version\s*control|git\b|github|gitlab|software\s*development)\b",
+            ],
+            "Networking": [
+                r"\b(?:tcp\/ip|udp|dns|http|https|websockets?|subnet|cidr|ip\s*address|network\s*partitions?|routing\s*protocol|osi\s*model|packets?|sockets?|networking|ports?)\b",
+            ],
+            "Mathematics": [
+                r"\b(?:calculus|matrix|matrices|eigenvalue|eigenvalues|eigenvector|eigenvectors|integral|integrals|algebra|theorem|lemma|proof|probability|discrete\s*math|derivative|polynomial|orthogonality|determinant)\b",
+            ],
+            "Physics": [
+                r"\b(?:quantum|thermodynamics|relativity|electromagnetism|mechanics|particle|gravity|velocity|acceleration|photon|optics|navier-stokes|schrodinger|wave\s*function|physics)\b",
+            ],
+            "Medical": [
+                r"\b(?:clinical|diagnosis|pathology|pharmacology|symptom|symptoms|therapy|disease|dosage|hospital|patient|physician|medicine|treatment\s*guidelines?|cardiology|oncology|neurology|pediatric|medical)\b",
+            ],
+            "Legal": [
+                r"\b(?:contract|contracts|compliance|gdpr|intellectual\s*property|patent|patents|litigation|liability|jurisdiction|statute|statutory|lawyer|legal|nda|trademark|copyright)\b",
+            ],
+            "Finance": [
+                r"\b(?:portfolio|valuation|dcf|stocks?|dividend|balance\s*sheet|crypto|cryptocurrency|blockchain|hedge\s*fund|market\s*cap|banking|options\s*trading|asset\s*allocation|financial\s*statements?|finance)\b",
+            ],
+            "Economics": [
+                r"\b(?:inflation|gdp|monetary\s*policy|fiscal\s*policy|supply\s*and\s*demand|macroeconomics|microeconomics|recession|central\s*bank|interest\s*rates?|deflation|economics)\b",
+            ],
+            "Biology": [
+                r"\b(?:dna|rna|crispr|gene|genes|genome|cellular|enzyme|protein\s*synthesis|organism|ecology|bacteria|virus|mutation|species|biological|biology)\b",
+            ],
+            "Chemistry": [
+                r"\b(?:molecule|molecules|atom|atoms|reaction|organic\s*chemistry|periodic\s*table|covalent|stoichiometry|acid|base|catalyst|compound|chemical|chemistry)\b",
+            ],
+            "Business": [
+                r"\b(?:kpi|roi|enterprise|corporate|stakeholders?|b2b|b2c|business\s*model|revenue|startup|startups|mergers?|acquisitions?|business\s*strategy|business)\b",
+            ],
+            "Marketing": [
+                r"\b(?:seo|conversion\s*rates?|branding|lead\s*generation|campaigns?|funnels?|click-through|ctr|social\s*media\s*marketing|marketing)\b",
+            ],
+            "Education": [
+                r"\b(?:curriculum|pedagogy|syllabus|lesson\s*plans?|rubrics?|tutoring|classrooms?|student\s*assessment|education)\b",
+            ],
+            "Creative Writing": [
+                r"\b(?:character\s*arcs?|novels?|fiction|poetry|screenplays?|protagonists?|narratives?|creative\s*writing|stories)\b",
+            ],
+            "Research": [
+                r"\b(?:methodology|hypotheses|hypothesis|literature\s*survey|empirical\s*study|peer-reviewed|academic\s*research|research\s*method)\b",
+            ],
+            "Writing": [
+                r"\b(?:grammar|proofread|copyedit|sentence\s*structure|prose\s*style|writing\s*style|drafting)\b",
+            ],
+            "Programming": [
+                r"\b(?:python|javascript|typescript|c\+\+|rust|golang|sql|functions?|arrays?|syntax|loops?|def\s+[a-zA-Z]|class\s+[a-zA-Z]|unit\s*tests?|programming|coding|algorithms?|sorting|data\s*structures?|modules?|docstrings?)\b",
+                r"\b(?:idiomatic|code\s*snippets?|boilerplate|variables?|recursion)\b",
+            ],
+        }
+
+        for domain_name, patterns in domain_patterns.items():
+            for p in patterns:
+                matches = len(re.findall(p, text, re.IGNORECASE))
+                if matches > 0:
+                    scores[domain_name] += matches * 2
+
+        # Contextual domain affinities based on category
+        if category == "Translation Task":
+            scores["Translation"] += 4
+        elif category == "Summarization Task" and max(scores.values()) == 0:
+            scores["Summarization"] += 4
+        elif category == "Code Review" and scores["Software Engineering"] == 0 and scores["Programming"] == 0:
+            scores["Software Engineering"] += 4
+        elif category in ["Code Generation", "Debugging"] and scores["Programming"] == 0 and scores["Software Engineering"] == 0:
+            scores["Programming"] += 4
+        elif category == "Documentation" and requires_code and scores["Programming"] == 0:
+            scores["Programming"] += 4
+
+        if requires_code and scores["Programming"] == 0 and scores["Software Engineering"] == 0 and scores["DevOps"] == 0:
+            scores["Programming"] += 2
+        if requires_math and scores["Mathematics"] == 0:
+            scores["Mathematics"] += 2
+
+        # Select highest scoring domain
+        best_domain = max(scores, key=lambda k: scores[k])
+        if scores[best_domain] > 0:
+            return best_domain
+
+        return "General Question Answering"
+
+    @classmethod
+    def analyze(cls, query: str) -> Dict[str, Any]:
+        """Analyzes query text at arrival time and returns detected task category,
+
+        subject domain, complexity, reasoning depth, requirement flags, and explainable signals.
         """
         text = (query or "").strip()
         words = text.split()
@@ -98,6 +318,12 @@ class PromptAnalyzer:
         requires_code = code_matches >= 1
         requires_math = math_matches >= 1
         requires_reasoning = reasoning_matches >= 1 or expert_matches >= 1 or math_matches >= 2
+
+        # 1. Infer Category & Domain
+        category = cls.infer_task_category(text, requires_code, requires_math)
+        domain = cls.infer_subject_domain(text, category, requires_code, requires_math)
+
+        signals.append(f"Inferred task intent '{category}' in domain '{domain}'")
 
         if expert_matches > 0:
             signals.append(f"High-complexity systems or theoretical markers ({expert_matches} pattern matches)")
@@ -154,6 +380,8 @@ class PromptAnalyzer:
             base_confidence = min(0.96, base_confidence + 0.04)
 
         return {
+            "category": category,
+            "domain": domain,
             "complexity": complexity,
             "reasoning_level": reasoning_level,
             "requires_code": requires_code,

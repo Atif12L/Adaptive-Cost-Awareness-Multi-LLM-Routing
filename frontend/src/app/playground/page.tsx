@@ -24,12 +24,182 @@ import { RoutingRequest, RoutingResponse } from "@/lib/types";
 import { formatCurrency, formatPercent, formatMs } from "@/lib/utils";
 
 interface PromptAnalysis {
+  category: string;
+  domain: string;
   complexity: "Easy" | "Medium" | "Hard" | "Expert";
   reasoningLevel: "Low" | "Medium" | "High";
   requiresCode: boolean;
   requiresMath: boolean;
   requiresReasoning: boolean;
   signals: string[];
+}
+
+function inferTaskCategory(text: string, requiresCode: boolean, requiresMath: boolean): string {
+  if (/\b(?:translate\s+(?:this|the\s+following)?|translation\s+of|convert\s+(?:this\s+text\s+)?to\s+(?:spanish|french|german|mandarin|chinese|japanese|russian|italian|portuguese|arabic|hindi|english))\b/i.test(text)) {
+    return "Translation Task";
+  }
+  if (/\b(?:summarize|summary\s+of|tldr|condense|synthesize\s+(?:this|the\s+following)?\s+into|executive\s+summary|brief\s+summary|abstract\s+of|key\s+takeaways)\b/i.test(text)) {
+    return "Summarization Task";
+  }
+  if (/\b(?:code\s*review|review\s+(?:this|my)?\s*(?:code|implementation|pull\s*request|pr|diff)|critique\s+(?:this|the)?\s*code|audit\s+(?:this\s+)?code|check\s+for\s+code\s*smells|is\s+this\s+code\s+idiomatic|improve\s+code\s+quality)\b/i.test(text)) {
+    return "Code Review";
+  }
+  if (/\b(?:debug|fix\s+(?:the\s+)?(?:bug|error|issue|problem|crash|exception|typo|failing)|traceback|syntaxerror|typeerror|referenceerror|nullpointer|segfault|undefined\s+is\s+not|stack\s*overflow|why\s+is\s+(?:this\s+)?(?:code\s+)?failing|troubleshoot)\b/i.test(text)) {
+    return "Debugging";
+  }
+  if (/\b(?:optimize|performance\s*tuning|reduce\s+latency|speed\s*up|make\s+(?:it|this)\s+faster|profiling|time\s*complexity|space\s*complexity|improve\s+(?:the\s+)?efficiency|reduce\s+(?:memory|cpu))\b/i.test(text)) {
+    return "Optimization Task";
+  }
+  if (/\b(?:documentation|docstrings?|write\s+(?:the\s+)?docs|readme(?:\.md)?|api\s*documentation|document\s+(?:this|the)?\s*code|changelog|release\s*notes|comment\s+(?:this|the)?\s*code)\b/i.test(text)) {
+    return "Documentation";
+  }
+  if (/\b(?:data\s*analysis|analyze\s+(?:the\s+|this\s+)?dataset|pandas\s+dataframe|dataframe|descriptive\s+statistics|aggregations?|correlation\s+matrix|visualize\s+data|scatter\s*plot|histogram|exploratory\s+data\s+analysis|eda)\b/i.test(text)) {
+    return "Data Analysis";
+  }
+  if (/\b(?:compare\s+and\s+contrast|compare\s+[a-zA-Z0-9_\-]+\s+(?:and|with|to)\s+[a-zA-Z0-9_\-]+|\bvs\.?\b|versus|trade-offs?|pros\s+and\s+cons|difference\s+between|which\s+(?:is|one\s+is)\s+better)\b/i.test(text)) {
+    return "Comparative Analysis";
+  }
+  if (/\b(?:literature\s*review|research\s*papers?|citations?|state\s+of\s+the\s+art|academic\s+(?:sources|literature|synthesis)|recent\s+advances\s+in|survey\s+paper|systematic\s+review)\b/i.test(text)) {
+    return "Research Assistance";
+  }
+  if (/\b(?:how\s+(?:do\s+i|can\s+i|to)|step-by-step\s+(?:guide|tutorial|instructions)|walkthrough|tutorial\s+on|guide\s+(?:on|to)|instructions\s+to\s+(?:install|setup|configure|deploy|build))\b/i.test(text)) {
+    return "How-To Tutorial";
+  }
+  if (/\b(?:write\s+an?\s+(?:essay|blog\s*post|article|email|story|poem|press\s*release|speech|marketing\s*copy|cover\s*letter|script|newsletter)|compose\s+a\s+(?:song|poem|story)|draft\s+an?\s+(?:email|announcement))\b/i.test(text)) {
+    return "Content Creation";
+  }
+  if (requiresMath || /\b(?:solve\s+for|find\s+the\s+(?:maximum|minimum|optimal|value)|algorithm\s+for|puzzle|dynamic\s*programming|shortest\s*path|graph\s*traversal|derive\s+the\s+formula|evaluate\s+the\s+expression|calculate\s+the)\b/i.test(text)) {
+    return "Problem Solving";
+  }
+  if (/\b(?:explain\b|walk\s+me\s+through|how\s+does.*work|break\s+down\b|clarify\b)/i.test(text)) {
+    return "Explanation";
+  }
+  if (/\b(?:write|create|implement|build|develop|generate|code)\s+(?:a\s+|an\s+)?(?:python|javascript|typescript|c\+\+|rust|golang|sql|bash|html|css|react)?\s*(?:function|script|class|module|program|endpoint|api|algorithm|component|service|app)\b/i.test(text) || (requiresCode && /\b(?:write|create|implement|build|develop|generate|code|program)\b/i.test(text))) {
+    return "Code Generation";
+  }
+  return "Conceptual Question";
+}
+
+function inferSubjectDomain(text: string, category: string, requiresCode: boolean, requiresMath: boolean): string {
+  const scores: Record<string, number> = {
+    "Biology": 0, "Business": 0, "Chemistry": 0, "Cloud Computing": 0, "Creative Writing": 0,
+    "Cyber Security": 0, "Data Science": 0, "DevOps": 0, "Economics": 0, "Education": 0,
+    "Finance": 0, "General Question Answering": 0, "Legal": 0, "Machine Learning": 0,
+    "Marketing": 0, "Mathematics": 0, "Medical": 0, "Networking": 0, "Physics": 0,
+    "Programming": 0, "Research": 0, "Software Engineering": 0, "Summarization": 0,
+    "Translation": 0, "Writing": 0,
+  };
+
+  const domainPatterns: Record<string, RegExp[]> = {
+    "Machine Learning": [
+      /\b(?:machine\s*learning|deep\s*learning|neural\s*networks?|transformers?|llms?|language\s*models?)\b/gi,
+      /\b(?:loss\s*function|backpropagation|gradient\s*descent|pytorch|tensorflow|fine-tuning|embeddings|attention\s*mechanism|hyperparameters?)\b/gi,
+    ],
+    "Data Science": [
+      /\b(?:pandas|numpy|scikit-learn|eda|regression|clustering|feature\s*engineering|seaborn|matplotlib|outlier|data\s*cleaning|random\s*forest|data\s*science)\b/gi,
+    ],
+    "DevOps": [
+      /\b(?:docker|kubernetes|k8s|helm|ci\/cd|pipelines?|terraform|ansible|github\s*actions|gitlab\s*ci|prometheus|grafana|containerization|deployment|deploying)\b/gi,
+    ],
+    "Cloud Computing": [
+      /\b(?:aws|azure|gcp|serverless|s3|ec2|lambda|vpc|cloud\s*infrastructure|cloudformation|blob\s*storage|cloud\s*computing)\b/gi,
+    ],
+    "Cyber Security": [
+      /\b(?:vulnerability|vulnerabilities|cve|cryptography|firewall|oauth|jwt|encryption|authentication|auth|penetration\s*testing|pentest|exploit|malware|ransomware|zero-day|owasp|injection|cyber\s*security)\b/gi,
+    ],
+    "Software Engineering": [
+      /\b(?:microservices|software\s*architecture|design\s*patterns?|distributed(?:\s*(?:systems?|database|storage|computing|ledger))?|consensus|paxos|raft|scalability|system\s*design|fault-tolerant|rate-limiter|high-throughput|concurrency|solid\s*principles|modularity|software\s*engineering)\b/gi,
+      /\b(?:code\s*review|pull\s*requests?|\bpr\b|code\s*smells?|refactor(?:ing)?|codebase|clean\s*code|version\s*control|git\b|github|gitlab|software\s*development)\b/gi,
+    ],
+    "Networking": [
+      /\b(?:tcp\/ip|udp|dns|http|https|websockets?|subnet|cidr|ip\s*address|network\s*partitions?|routing\s*protocol|osi\s*model|packets?|sockets?|networking|ports?)\b/gi,
+    ],
+    "Mathematics": [
+      /\b(?:calculus|matrix|matrices|eigenvalue|eigenvalues|eigenvector|eigenvectors|integral|integrals|algebra|theorem|lemma|proof|probability|discrete\s*math|derivative|polynomial|orthogonality|determinant)\b/gi,
+    ],
+    "Physics": [
+      /\b(?:quantum|thermodynamics|relativity|electromagnetism|mechanics|particle|gravity|velocity|acceleration|photon|optics|navier-stokes|schrodinger|wave\s*function|physics)\b/gi,
+    ],
+    "Medical": [
+      /\b(?:clinical|diagnosis|pathology|pharmacology|symptom|symptoms|therapy|disease|dosage|hospital|patient|physician|medicine|treatment\s*guidelines?|cardiology|oncology|neurology|pediatric|medical)\b/gi,
+    ],
+    "Legal": [
+      /\b(?:contract|contracts|compliance|gdpr|intellectual\s*property|patent|patents|litigation|liability|jurisdiction|statute|statutory|lawyer|legal|nda|trademark|copyright)\b/gi,
+    ],
+    "Finance": [
+      /\b(?:portfolio|valuation|dcf|stocks?|dividend|balance\s*sheet|crypto|cryptocurrency|blockchain|hedge\s*fund|market\s*cap|banking|options\s*trading|asset\s*allocation|financial\s*statements?|finance)\b/gi,
+    ],
+    "Economics": [
+      /\b(?:inflation|gdp|monetary\s*policy|fiscal\s*policy|supply\s*and\s*demand|macroeconomics|microeconomics|recession|central\s*bank|interest\s*rates?|deflation|economics)\b/gi,
+    ],
+    "Biology": [
+      /\b(?:dna|rna|crispr|gene|genes|genome|cellular|enzyme|protein\s*synthesis|organism|ecology|bacteria|virus|mutation|species|biological|biology)\b/gi,
+    ],
+    "Chemistry": [
+      /\b(?:molecule|molecules|atom|atoms|reaction|organic\s*chemistry|periodic\s*table|covalent|stoichiometry|acid|base|catalyst|compound|chemical|chemistry)\b/gi,
+    ],
+    "Business": [
+      /\b(?:kpi|roi|enterprise|corporate|stakeholders?|b2b|b2c|business\s*model|revenue|startup|startups|mergers?|acquisitions?|business\s*strategy|business)\b/gi,
+    ],
+    "Marketing": [
+      /\b(?:seo|conversion\s*rates?|branding|lead\s*generation|campaigns?|funnels?|click-through|ctr|social\s*media\s*marketing|marketing)\b/gi,
+    ],
+    "Education": [
+      /\b(?:curriculum|pedagogy|syllabus|lesson\s*plans?|rubrics?|tutoring|classrooms?|student\s*assessment|education)\b/gi,
+    ],
+    "Creative Writing": [
+      /\b(?:character\s*arcs?|novels?|fiction|poetry|screenplays?|protagonists?|narratives?|creative\s*writing|stories)\b/gi,
+    ],
+    "Research": [
+      /\b(?:methodology|hypotheses|hypothesis|literature\s*survey|empirical\s*study|peer-reviewed|academic\s*research|research\s*method)\b/gi,
+    ],
+    "Writing": [
+      /\b(?:grammar|proofread|copyedit|sentence\s*structure|prose\s*style|writing\s*style|drafting)\b/gi,
+    ],
+    "Programming": [
+      /\b(?:python|javascript|typescript|c\+\+|rust|golang|sql|functions?|arrays?|syntax|loops?|def\s+[a-zA-Z]|class\s+[a-zA-Z]|unit\s*tests?|programming|coding|algorithms?|sorting|data\s*structures?|modules?|docstrings?)\b/gi,
+      /\b(?:idiomatic|code\s*snippets?|boilerplate|variables?|recursion)\b/gi,
+    ],
+  };
+
+  for (const [dom, patterns] of Object.entries(domainPatterns)) {
+    for (const p of patterns) {
+      const matches = text.match(p);
+      if (matches) {
+        scores[dom] += matches.length * 2;
+      }
+    }
+  }
+
+  if (category === "Translation Task") {
+    scores["Translation"] += 4;
+  } else if (category === "Summarization Task" && Math.max(...Object.values(scores)) === 0) {
+    scores["Summarization"] += 4;
+  } else if (category === "Code Review" && (scores["Software Engineering"] || 0) === 0 && (scores["Programming"] || 0) === 0) {
+    scores["Software Engineering"] = (scores["Software Engineering"] || 0) + 4;
+  } else if ((category === "Code Generation" || category === "Debugging") && (scores["Programming"] || 0) === 0 && (scores["Software Engineering"] || 0) === 0) {
+    scores["Programming"] = (scores["Programming"] || 0) + 4;
+  } else if (category === "Documentation" && requiresCode && (scores["Programming"] || 0) === 0) {
+    scores["Programming"] = (scores["Programming"] || 0) + 4;
+  }
+
+  if (requiresCode && scores["Programming"] === 0 && scores["Software Engineering"] === 0 && scores["DevOps"] === 0) {
+    scores["Programming"] += 2;
+  }
+  if (requiresMath && scores["Mathematics"] === 0) {
+    scores["Mathematics"] += 2;
+  }
+
+  let bestDomain = "General Question Answering";
+  let maxScore = 0;
+  for (const [d, sc] of Object.entries(scores)) {
+    if (sc > maxScore) {
+      maxScore = sc;
+      bestDomain = d;
+    }
+  }
+
+  return bestDomain;
 }
 
 function analyzePromptText(query: string): PromptAnalysis {
@@ -51,13 +221,14 @@ function analyzePromptText(query: string): PromptAnalysis {
 
   const codePatterns = [
     /```/,
-    /\b(?:def|class|interface|struct|impl|func|function)\s+[a-zA-Z_]\w*/i,
+    /\b(?:def|class|interface|struct|impl|func)\s+[a-zA-Z_]\w*|\bfunction\s+[a-zA-Z_]\w*\s*\(/i,
     /\b(?:import|from\s+[a-zA-Z_]\w*\s+import|require\(|include\s*<)/i,
     /\b(?:return|async|await|const|let|var|public\s+static\s+void)\b/i,
     /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b.*\b(?:FROM|WHERE|JOIN|SET)\b/i,
     /[{}[\];]{3,}/,
     /\b(?:unit\s*test|pytest|jest|junit|test\s*case|mocking|tdd|assertion)\b/i,
     /\b(?:refactor|debugging|debug|traceback|syntaxerror|nullpointer|segfault|profiling)\b/i,
+    /\b(?:code\s*review|pull\s*requests?|\bpr\b|code\s*smells?|idiomatic|codebase)\b/i,
     /\b(?:python|javascript|typescript|c\+\+|rust|golang|docker|kubernetes|redis|postgresql)\b/i,
   ];
 
@@ -97,6 +268,11 @@ function analyzePromptText(query: string): PromptAnalysis {
   const requiresCode = codeMatches >= 1;
   const requiresMath = mathMatches >= 1;
   const requiresReasoning = reasoningMatches >= 1 || expertMatches >= 1 || mathMatches >= 2;
+
+  const category = inferTaskCategory(text, requiresCode, requiresMath);
+  const domain = inferSubjectDomain(text, category, requiresCode, requiresMath);
+
+  signals.push(`Task: ${category} • Domain: ${domain}`);
 
   if (expertMatches > 0) signals.push(`Systems/theoretical depth (${expertMatches} matches)`);
   if (codeMatches > 0) signals.push(`Code syntax markers (${codeMatches} matches)`);
@@ -140,6 +316,8 @@ function analyzePromptText(query: string): PromptAnalysis {
   }
 
   return {
+    category,
+    domain,
     complexity,
     reasoningLevel,
     requiresCode,
@@ -181,7 +359,7 @@ const PRESETS = [
   {
     title: "Low-Latency Quick Utility",
     query: "Check if this phone number format is valid for E.164 standard: +14155552671 and return JSON.",
-    category: "General Question Answering",
+    category: "Problem Solving",
     domain: "Networking",
     complexity: "Easy",
     reasoning_level: "Low",
@@ -210,38 +388,48 @@ const PRESETS = [
 
 const CATEGORIES = [
   "Code Generation",
+  "Code Review",
+  "Comparative Analysis",
   "Conceptual Question",
-  "Explanation",
+  "Content Creation",
+  "Data Analysis",
   "Debugging",
-  "Mathematics",
+  "Documentation",
+  "Explanation",
   "How-To Tutorial",
-  "Summarization Task",
+  "Optimization Task",
   "Problem Solving",
   "Research Assistance",
+  "Summarization Task",
   "Translation Task",
-  "Content Creation",
-  "Code Review",
-  "Optimization Task",
-  "Comparative Analysis",
-  "General Question Answering",
 ];
 
 const DOMAINS = [
-  "Programming",
-  "Data Science",
-  "Software Engineering",
-  "Machine Learning",
-  "Cyber Security",
+  "Biology",
+  "Business",
+  "Chemistry",
   "Cloud Computing",
+  "Creative Writing",
+  "Cyber Security",
+  "Data Science",
   "DevOps",
-  "Finance",
-  "Legal",
-  "Medical",
-  "Mathematics",
-  "Physics",
   "Economics",
-  "Marketing",
   "Education",
+  "Finance",
+  "General Question Answering",
+  "Legal",
+  "Machine Learning",
+  "Marketing",
+  "Mathematics",
+  "Medical",
+  "Networking",
+  "Physics",
+  "Programming",
+  "Research",
+  "Software Engineering",
+  "Summarization",
+  "Translation",
+  "Writing",
 ];
 
 export default function PlaygroundPage() {
@@ -270,9 +458,11 @@ export default function PlaygroundPage() {
   // Real-time arrival-time prompt analyzer
   const promptAnalysis = useMemo(() => analyzePromptText(query), [query]);
 
-  // Synchronize detected complexity & reasoning depth when auto-detect is enabled
+  // Synchronize detected fields when auto-detect is enabled
   useEffect(() => {
     if (autoDetect) {
+      setCategory(promptAnalysis.category);
+      setDomain(promptAnalysis.domain);
       setComplexity(promptAnalysis.complexity);
       setReasoningLevel(promptAnalysis.reasoningLevel);
       setRequiresCode(promptAnalysis.requiresCode);
@@ -396,10 +586,18 @@ export default function PlaygroundPage() {
           {/* Categorical Metadata Selectors */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Task Category</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground">Task Category</label>
+                {autoDetect && (
+                  <span className="text-[10px] text-primary font-medium">Auto-derived</span>
+                )}
+              </div>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={(e) => {
+                  setAutoDetect(false);
+                  setCategory(e.target.value);
+                }}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
               >
                 {CATEGORIES.map((c) => (
@@ -411,10 +609,18 @@ export default function PlaygroundPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Subject Domain</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground">Subject Domain</label>
+                {autoDetect && (
+                  <span className="text-[10px] text-primary font-medium">Auto-derived</span>
+                )}
+              </div>
               <select
                 value={domain}
-                onChange={(e) => setDomain(e.target.value)}
+                onChange={(e) => {
+                  setAutoDetect(false);
+                  setDomain(e.target.value);
+                }}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
               >
                 {DOMAINS.map((d) => (
@@ -432,7 +638,7 @@ export default function PlaygroundPage() {
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 <span className="text-xs font-bold uppercase tracking-wider text-foreground">
-                  Complexity & Reasoning
+                  Auto-Detected Context
                 </span>
                 <span
                   className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
@@ -459,6 +665,8 @@ export default function PlaygroundPage() {
                     type="button"
                     onClick={() => {
                       setAutoDetect(true);
+                      setCategory(promptAnalysis.category);
+                      setDomain(promptAnalysis.domain);
                       setComplexity(promptAnalysis.complexity);
                       setReasoningLevel(promptAnalysis.reasoningLevel);
                     }}
@@ -471,16 +679,20 @@ export default function PlaygroundPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <div className="flex items-center gap-1.5 font-medium text-foreground">
-                <span className="text-muted-foreground text-[11px]">Prompt Signals:</span>
-                <span className="px-2 py-0.5 rounded-md bg-background border border-border font-semibold text-primary">
-                  {promptAnalysis.complexity} Complexity
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-background border border-border font-semibold text-primary">
-                  {promptAnalysis.reasoningLevel} Reasoning
-                </span>
-              </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground text-[11px] font-medium">Signals:</span>
+              <span className="px-2 py-0.5 rounded-md bg-background border border-border font-semibold text-primary text-[11px]">
+                {promptAnalysis.category}
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-background border border-border font-semibold text-primary text-[11px]">
+                {promptAnalysis.domain}
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-background border border-border font-semibold text-primary text-[11px]">
+                {promptAnalysis.complexity}
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-background border border-border font-semibold text-primary text-[11px]">
+                {promptAnalysis.reasoningLevel}
+              </span>
               {promptAnalysis.signals.slice(0, 2).map((sig, i) => (
                 <span
                   key={i}
@@ -807,7 +1019,15 @@ export default function PlaygroundPage() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div className="rounded-lg bg-muted/40 p-2.5 border border-border">
+                      <span className="text-[10px] text-muted-foreground block font-medium">Category</span>
+                      <span className="font-bold text-foreground truncate block">{result.detected_features.category || result.feature_contributions?.category}</span>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 p-2.5 border border-border">
+                      <span className="text-[10px] text-muted-foreground block font-medium">Domain</span>
+                      <span className="font-bold text-foreground truncate block">{result.detected_features.domain || result.feature_contributions?.domain}</span>
+                    </div>
                     <div className="rounded-lg bg-muted/40 p-2.5 border border-border">
                       <span className="text-[10px] text-muted-foreground block font-medium">Complexity</span>
                       <span className="font-bold text-foreground">{result.detected_features.complexity}</span>
